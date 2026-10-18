@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAX30102 Heart Rate Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --bg:        #0a0d12;
+    --surface:   #111620;
+    --surface2:  #181e2a;
+    --border:    #1e2840;
+    --accent:    #e8334a;
+    --accent2:   #ff6b6b;
+    --teal:      #00c9a7;
+    --amber:     #f5a623;
+    --text:      #eef0f5;
+    --muted:     #6b7a99;
+    --green:     #22c55e;
+    --red:       #e8334a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  /* Animated background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(232,51,74,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(232,51,74,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrapper {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 24px 48px;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .header-left { display: flex; align-items: center; gap: 14px; }
+
+  .logo {
+    width: 42px; height: 42px;
+    background: var(--accent);
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .logo svg { width: 22px; height: 22px; fill: none; stroke: white; stroke-width: 2; }
+
+  .title-block h1 {
+    font-family: 'Space Mono', monospace;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--text);
+  }
+
+  .title-block p {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .status-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-family: 'Space Mono', monospace;
+    color: var(--muted);
+  }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.4s;
+  }
+
+  .status-dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse-dot 2s infinite; }
+  .status-dot.error { background: var(--red); }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+  }
+
+  /* ── FINGER WARNING ── */
+  #finger-alert {
+    background: rgba(245,166,35,0.1);
+    border: 1px solid rgba(245,166,35,0.3);
+    border-radius: 10px;
+    padding: 12px 18px;
+    font-size: 13px;
+    color: var(--amber);
+    font-family: 'Space Mono', monospace;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: opacity 0.4s;
+  }
+
+  #finger-alert.hidden { opacity: 0; pointer-events: none; }
+
+  /* ── STAT CARDS ROW ── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+
+  .stat-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    border-radius: 2px 2px 0 0;
+    background: var(--card-accent, var(--border));
+    transition: background 0.4s;
+  }
+
+  .stat-card.red-card { --card-accent: var(--accent); }
+  .stat-card.teal-card { --card-accent: var(--teal); }
+  .stat-card.amber-card { --card-accent: var(--amber); }
+  .stat-card.blue-card { --card-accent: #4c8ef7; }
+
+  .stat-label {
+    font-size: 11px;
+    font-family: 'Space Mono', monospace;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 10px;
+  }
+
+  .stat-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1;
+    transition: color 0.3s;
+  }
+
+  .stat-unit {
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 400;
+    margin-left: 4px;
+  }
+
+  .stat-sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+
+  /* BPM Heart Beat animation */
+  .heart-icon {
+    position: absolute;
+    right: 18px; top: 18px;
+    font-size: 22px;
+    animation: none;
+    opacity: 0.3;
+    user-select: none;
+  }
+
+  .heart-icon.beating {
+    animation: heartbeat 0.6s ease-in-out;
+    opacity: 1;
+    color: var(--accent);
+  }
+
+  @keyframes heartbeat {
+    0% { transform: scale(1); }
+    30% { transform: scale(1.35); }
+    60% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+  }
+
+  /* ── ECG CHART ── */
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 22px 22px 18px;
+    margin-bottom: 24px;
+  }
+
+  .chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+
+  .chart-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+
+  .chart-badge {
+    font-size: 11px;
+    font-family: 'Space Mono', monospace;
+    background: rgba(232,51,74,0.12);
+    color: var(--accent2);
+    border: 1px solid rgba(232,51,74,0.2);
+    padding: 3px 10px;
+    border-radius: 20px;
+  }
+
+  .chart-wrap {
+    position: relative;
+    width: 100%;
+    height: 200px;
+  }
+
+  /* ── IR + ZONE ROW ── */
+  .bottom-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  @media (max-width: 600px) { .bottom-row { grid-template-columns: 1fr; } }
+
+  .mini-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px;
+  }
+
+  .mini-title {
+    font-size: 11px;
+    font-family: 'Space Mono', monospace;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 14px;
+  }
+
+  /* IR bar */
+  .ir-bar-track {
+    background: var(--surface2);
+    border-radius: 6px;
+    height: 10px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+
+  .ir-bar-fill {
+    height: 100%;
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--teal), #4c8ef7);
+    transition: width 0.5s ease;
+    width: 0%;
+  }
+
+  .ir-val {
+    font-family: 'Space Mono', monospace;
+    font-size: 15px;
+    color: var(--teal);
+  }
+
+  .ir-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+    font-family: 'Space Mono', monospace;
+  }
+
+  /* Zone indicator */
+  .zone-display {
+    text-align: center;
+    padding: 8px 0;
+  }
+
+  .zone-name {
+    font-family: 'Space Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    transition: color 0.4s;
+  }
+
+  .zone-range {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    margin-bottom: 14px;
+  }
+
+  .zone-dots {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+  }
+
+  .zone-dot {
+    width: 28px; height: 6px;
+    border-radius: 3px;
+    background: var(--surface2);
+    transition: background 0.4s;
+  }
+
+  /* ── CONNECTION ERROR ── */
+  #conn-error {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: rgba(232,51,74,0.12);
+    border: 1px solid rgba(232,51,74,0.3);
+    border-radius: 10px;
+    padding: 12px 18px;
+    font-size: 12px;
+    font-family: 'Space Mono', monospace;
+    color: var(--accent2);
+    display: none;
+    z-index: 100;
+    max-width: 280px;
+  }
+
+  /* ── TIME ── */
+  #clock {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <header>
+    <div class="header-left">
+      <div class="logo">
+        <svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" stroke="white" stroke-width="2" fill="none"/></svg>
+      </div>
+      <div class="title-block">
+        <h1>MAX30102 MONITOR</h1>
+        <p>Heart Rate &amp; IR Signal — Live Dashboard</p>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span id="clock"></span>
+      <div class="status-badge">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-text">Connecting...</span>
+      </div>
+    </div>
+  </header>
+
+  <div id="finger-alert">
+    ⚠ Place your finger on the sensor — no valid reading detected
+  </div>
+
+  <div class="stats-row">
+    <!-- BPM -->
+    <div class="stat-card red-card">
+      <div class="heart-icon" id="heart-icon">♥</div>
+      <div class="stat-label">Live BPM</div>
+      <div class="stat-value" id="bpm-val" style="color:var(--accent)">--<span class="stat-unit">bpm</span></div>
+      <div class="stat-sub" id="bpm-sub">Waiting for beat...</div>
+    </div>
+
+    <!-- Avg BPM -->
+    <div class="stat-card teal-card">
+      <div class="stat-label">Avg BPM (last 4)</div>
+      <div class="stat-value" id="avg-val" style="color:var(--teal)">--<span class="stat-unit">bpm</span></div>
+      <div class="stat-sub" id="avg-sub">Rolling average</div>
+    </div>
+
+    <!-- IR Value -->
+    <div class="stat-card amber-card">
+      <div class="stat-label">IR Signal</div>
+      <div class="stat-value" id="ir-val" style="color:var(--amber);font-size:26px">--</div>
+      <div class="stat-sub">Raw infrared count</div>
+    </div>
+
+    <!-- Finger status -->
+    <div class="stat-card blue-card">
+      <div class="stat-label">Sensor Status</div>
+      <div class="stat-value" id="finger-val" style="color:#4c8ef7;font-size:22px">--</div>
+      <div class="stat-sub" id="finger-sub">Checking...</div>
+    </div>
+  </div>
+
+  <!-- BPM History Chart -->
+  <div class="chart-card">
+    <div class="chart-header">
+      <span class="chart-title">BPM History (last 60 readings)</span>
+      <span class="chart-badge" id="chart-badge">LIVE</span>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="bpmChart" role="img" aria-label="Live BPM history line chart">Live heart rate data will appear here once sensor is connected.</canvas>
+    </div>
+  </div>
+
+  <div class="bottom-row">
+    <!-- IR Signal Bar -->
+    <div class="mini-card">
+      <div class="mini-title">IR Signal Strength</div>
+      <div class="ir-bar-track">
+        <div class="ir-bar-fill" id="ir-bar"></div>
+      </div>
+      <div class="ir-labels"><span>0</span><span>50k (finger)</span><span>100k+</span></div>
+      <div class="ir-val" id="ir-bar-val" style="margin-top:10px">-- counts</div>
+    </div>
+
+    <!-- Heart Rate Zone -->
+    <div class="mini-card">
+      <div class="mini-title">Heart Rate Zone</div>
+      <div class="zone-display">
+        <div class="zone-name" id="zone-name" style="color:var(--muted)">--</div>
+        <div class="zone-range" id="zone-range">Place finger on sensor</div>
+        <div class="zone-dots">
+          <div class="zone-dot" id="z1"></div>
+          <div class="zone-dot" id="z2"></div>
+          <div class="zone-dot" id="z3"></div>
+          <div class="zone-dot" id="z4"></div>
+          <div class="zone-dot" id="z5"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="conn-error">
+  ⚠ Cannot reach bridge.py<br>
+  Make sure you ran: <code>python bridge.py</code>
+</div>
+
+<script>
+const API = "http://localhost:5000/data";
+let chart, prevBpm = 0, errorShown = false;
+
+// Clock
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent = now.toLocaleTimeString();
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// Chart setup
+function initChart() {
+  const ctx = document.getElementById('bpmChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: 'BPM',
+        data: [],
+        borderColor: '#e8334a',
+        backgroundColor: 'rgba(232,51,74,0.08)',
+        borderWidth: 2,
+        pointRadius: 3,
+        pointBackgroundColor: '#e8334a',
+        pointBorderColor: 'transparent',
+        fill: true,
+        tension: 0.4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 300 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#181e2a',
+          borderColor: '#1e2840',
+          borderWidth: 1,
+          titleColor: '#6b7a99',
+          bodyColor: '#eef0f5',
+          callbacks: {
+            label: ctx => `${ctx.raw} bpm`
+          }
+        }
+      },
+      scales: {
+        x: {
+          display: false
+        },
+        y: {
+          min: 40,
+          max: 180,
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: {
+            color: '#6b7a99',
+            font: { family: 'Space Mono', size: 10 },
+            callback: v => v + ' bpm'
+          },
+          border: { color: 'transparent' }
+        }
+      }
+    }
+  });
+}
+
+// Zone determination
+function getZone(bpm) {
+  if (!bpm || bpm < 20) return { name: 'No Signal', range: 'Place finger', color: '#6b7a99', dots: 0 };
+  if (bpm < 60)  return { name: 'Resting',    range: '< 60 bpm',     color: '#4c8ef7',  dots: 1 };
+  if (bpm < 100) return { name: 'Normal',     range: '60 – 100 bpm', color: '#22c55e',  dots: 2 };
+  if (bpm < 130) return { name: 'Elevated',   range: '100 – 130 bpm',color: '#f5a623',  dots: 3 };
+  if (bpm < 160) return { name: 'High',       range: '130 – 160 bpm',color: '#ff6b6b',  dots: 4 };
+  return              { name: 'Max Zone',   range: '> 160 bpm',    color: '#e8334a',  dots: 5 };
+}
+
+function triggerHeartbeat() {
+  const h = document.getElementById('heart-icon');
+  h.classList.remove('beating');
+  void h.offsetWidth; // reflow
+  h.classList.add('beating');
+  setTimeout(() => h.classList.remove('beating'), 700);
+}
+
+// Main update function
+function update(data) {
+  const { ir, bpm, avg_bpm, finger, history } = data;
+
+  // Status dot
+  document.getElementById('status-dot').className = 'status-dot live';
+  document.getElementById('status-text').textContent = 'LIVE';
+  document.getElementById('conn-error').style.display = 'none';
+  errorShown = false;
+
+  // Finger alert
+  document.getElementById('finger-alert').classList.toggle('hidden', finger);
+
+  // BPM card
+  if (finger && bpm > 20) {
+    document.getElementById('bpm-val').innerHTML = `${bpm.toFixed(0)}<span class="stat-unit">bpm</span>`;
+    document.getElementById('bpm-sub').textContent = bpm < 60 ? 'Below normal resting' : bpm < 100 ? 'Normal range' : 'Elevated';
+    if (Math.abs(bpm - prevBpm) > 2) triggerHeartbeat();
+    prevBpm = bpm;
+  } else {
+    document.getElementById('bpm-val').innerHTML = `--<span class="stat-unit">bpm</span>`;
+    document.getElementById('bpm-sub').textContent = 'Waiting for valid beat...';
+  }
+
+  // Avg BPM
+  if (finger && avg_bpm > 0) {
+    document.getElementById('avg-val').innerHTML = `${avg_bpm}<span class="stat-unit">bpm</span>`;
+    document.getElementById('avg-sub').textContent = 'Stable average reading';
+  } else {
+    document.getElementById('avg-val').innerHTML = `--<span class="stat-unit">bpm</span>`;
+    document.getElementById('avg-sub').textContent = 'Rolling average (4 beats)';
+  }
+
+  // IR card
+  document.getElementById('ir-val').textContent = ir.toLocaleString();
+  document.getElementById('ir-bar-val').textContent = ir.toLocaleString() + ' counts';
+
+  // IR bar (scale 0 to 120000)
+  const pct = Math.min(100, (ir / 120000) * 100);
+  document.getElementById('ir-bar').style.width = pct + '%';
+
+  // Finger status
+  document.getElementById('finger-val').textContent = finger ? 'FINGER ON' : 'NO FINGER';
+  document.getElementById('finger-val').style.color = finger ? '#22c55e' : '#f5a623';
+  document.getElementById('finger-sub').textContent = finger ? `Signal: ${ir.toLocaleString()}` : 'IR < 50,000 threshold';
+
+  // Zone
+  const zone = getZone(finger ? avg_bpm : 0);
+  document.getElementById('zone-name').textContent = zone.name;
+  document.getElementById('zone-name').style.color = zone.color;
+  document.getElementById('zone-range').textContent = zone.range;
+  for (let i = 1; i <= 5; i++) {
+    document.getElementById('z' + i).style.background = i <= zone.dots ? zone.color : '#181e2a';
+  }
+
+  // Chart update
+  if (chart && history.length > 0) {
+    chart.data.labels = history.map((_, i) => i + 1);
+    chart.data.datasets[0].data = history;
+    chart.update();
+  }
+}
+
+// Poll bridge.py every 1 second
+async function poll() {
+  try {
+    const res = await fetch(API);
+    if (!res.ok) throw new Error('bad response');
+    const data = await res.json();
+    update(data);
+  } catch (e) {
+    if (!errorShown) {
+      document.getElementById('status-dot').className = 'status-dot error';
+      document.getElementById('status-text').textContent = 'NO CONNECTION';
+      document.getElementById('conn-error').style.display = 'block';
+      errorShown = true;
+    }
+  }
+}
+
+initChart();
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>
